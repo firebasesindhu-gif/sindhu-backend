@@ -1,0 +1,6 @@
+node_modules
+projects
+temp
+uploads
+.env
+serviceAccountKey.json
