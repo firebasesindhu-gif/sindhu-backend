@@ -19,6 +19,7 @@ const upload = multer({
 // ✅ Firebase Admin Init
 require('dotenv').config();
 const serviceAccount = require(process.env.FIREBASE_SERVICE_ACCOUNT);
+const BASE_URL = process.env.BASE_URL;
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -133,13 +134,14 @@ app.post("/upload/:projectId", upload.single("file"), async (req, res) => {
     await fileUpload.makePublic();
 
     const zipUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+    const previewUrl = 
 
     console.log("ZIP URL:", zipUrl);
 
     // ✅ Save in Firestore
     await db.collection("projects").doc(projectId).set({
       projectId,
-      zipUrl,
+      zipUrl: zipUrl,
       status: "uploaded",
       updatedAt: new Date()
     }, { merge: true });
@@ -233,7 +235,8 @@ app.post("/publish/:projectId", async (req, res) => {
 
     const projectId = req.params.projectId;
 
-    const publicUrl = `${req.protocol}://${req.get("host")}/p/${projectId}`;
+    const publicUrl = `${BASE_URL}/p/${projectId}`;
+    // const publicUrl = `${req.protocol}://${req.get("host")}/p/${projectId}`;
 
     // Update Firestore
     await db.collection("projects").doc(projectId).set({
@@ -331,6 +334,28 @@ app.get("/p/:projectId", async (req, res) => {
 
 });
 
+/*----------- Get All Projects------------ */
+app.get("/projects", async (req, res) => {
+  const snapshot = await db.collection("projects").get();
+
+  const projects = snapshot.docs.map(doc => doc.data());
+
+  res.send(projects);
+});
+
+/*--------- Get SPecific Student Projects---------- */
+app.get("/projects/:email", async (req, res) => {
+  const email = req.params.email;
+
+  const snapshot = await db.collection("projects")
+    .where("members", "array-contains", email)
+    .get();
+
+  const projects = snapshot.docs.map(doc => doc.data());
+
+  res.send(projects);
+});
+
 
 // ==========================================
 // ✅ SERVE PROJECT FILES
@@ -342,4 +367,4 @@ app.use("/projects", express.static(path.join(__dirname, "projects")));
 // ✅ SERVER START
 // ==========================================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server running"));
+app.listen(PORT, () => console.log("Server running on port ", PORT));
