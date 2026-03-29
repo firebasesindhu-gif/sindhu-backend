@@ -200,9 +200,13 @@ async function extractZipFile(zipUrl, projectId, extractPath) {
   fs.unlinkSync(zipPath);
 }
 
+
+app.use('/preview', express.static(path.join(__dirname, 'projects')));
+
 /* ------------------- Preview Link -------------------*/
-app.get("/preview/:projectId", (req, res) => {
+app.get("/preview/:projectId/", (req, res) => {
   const projectId = req.params.projectId;
+  console.log(req.params)
   const basePath = path.join(__dirname, "projects", projectId);
 
   // let indexPath = path.join(basePath, "index.html");
@@ -235,7 +239,7 @@ app.post("/publish/:projectId", async (req, res) => {
 
     const projectId = req.params.projectId;
 
-    const publicUrl = `${BASE_URL}/p/${projectId}`;
+    const publicUrl = `${BASE_URL}/p/${projectId}/`;
     // const publicUrl = `${req.protocol}://${req.get("host")}/p/${projectId}`;
 
     // Update Firestore
@@ -257,8 +261,11 @@ app.post("/publish/:projectId", async (req, res) => {
 
 });
 
+
+app.use("/p", express.static(path.join(__dirname, "projects")));
+
 /*---------------- PUBLIC VIEW ----------------------- */
-app.get("/p/:projectId", async (req, res) => {
+app.get("/p/:projectId/", async (req, res) => {
 
   try {
 
