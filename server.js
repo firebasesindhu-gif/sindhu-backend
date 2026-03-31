@@ -33,9 +33,12 @@ console.log("Using bucket:", bucket.name);
 
 
 function findIndexFile(basePath) {
+  console.log("Entered findIndexfile");
   const files = fs.readdirSync(basePath);
+  console.log("files iteration", files);
   for (let file of files) {
     const fullPath = path.join(basePath, file);
+    console.log("fullpath", fullPath);
     // If file is index.html (case insensitive)
     if (file.toLowerCase() === "index.html") {
       return fullPath;
@@ -43,9 +46,11 @@ function findIndexFile(basePath) {
     // If folder → search inside
     if (fs.lstatSync(fullPath).isDirectory()) {
       const result = findIndexFile(fullPath);
+      console.log("iteration in sub folders");
       if (result) return result;
     }
   }
+  console.log("File not found in findindexfile iteration");
   return null;
 }
 
@@ -134,9 +139,9 @@ app.post("/upload/:projectId", upload.single("file"), async (req, res) => {
     await fileUpload.makePublic();
 
     const zipUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-    const previewUrl = 
+    const previewUrl =
 
-    console.log("ZIP URL:", zipUrl);
+      console.log("ZIP URL:", zipUrl);
 
     // ✅ Save in Firestore
     await db.collection("projects").doc(projectId).set({
@@ -166,7 +171,7 @@ app.post("/upload/:projectId", upload.single("file"), async (req, res) => {
 // ✅ DOWNLOAD + EXTRACT FUNCTION
 // ==========================================
 async function extractZipFile(zipUrl, projectId, extractPath) {
-
+  console.log("Entered extractzipfile function");
   const zipPath = path.join(__dirname, "temp", `${projectId}.zip`);
 
   // ✅ Ensure folders exist
@@ -204,18 +209,58 @@ async function extractZipFile(zipUrl, projectId, extractPath) {
 app.use('/preview', express.static(path.join(__dirname, 'projects')));
 
 /* ------------------- Preview Link -------------------*/
-app.get("/preview/:projectId/", (req, res) => {
-  const projectId = req.params.projectId;
-  console.log(req.params)
-  const basePath = path.join(__dirname, "projects", projectId);
+app.get("/preview/:projectId/", async(req, res) => {
+  try {
+    console.log("Entered preview mode for project ", req.params.projectId);
+    const projectId = req.params.projectId;
+    console.log(req.params)
+    const basePath = path.join(__dirname, "projects", projectId);
 
-  // let indexPath = path.join(basePath, "index.html");
+    const doc = await db.collection("projects").doc(projectId).get();
 
-  let indexPath = findIndexFile(basePath);
-  if (!indexPath) {
-    res.status(404).send("index.html not found in project");
-  } else {
-    res.sendFile(path.resolve(indexPath));
+    if (!doc.exists) {
+      return res.send("Project not found");
+    }
+
+    const data = doc.data();
+    if(data.status !== "uploaded") {
+      res.send("Project has not been uploaded yet.");
+    }
+    // let indexPath = path.join(basePath, "index.html");
+    console.log("Checking for the folder");
+    if (fs.existsSync("projects") && fs.existsSync(basePath)) {
+      console.log(fs.existsSync("projects"), fs.existsSync(basePath));
+      console.log("Checking for index.html file in available folder");
+      let indexPath = findIndexFile(basePath);
+      console.log("found index file: ", indexPath);
+      if (indexPath) {
+        return res.status(200).sendFile(path.resolve(indexPath));
+      }
+    }
+    console.log("Folder not found");
+    const zipUrl = data.zipUrl;    
+    const zipPath = `temp/${projectId}.zip`;
+    // ✅ Ensure folders exist
+    if (!fs.existsSync("projects")) {
+      fs.mkdirSync("projects");
+    }
+
+    if (!fs.existsSync(extractPath)) {
+      fs.mkdirSync(extractPath, { recursive: true });
+    }
+    await extractZipFile(zipUrl, projectId, extractPath);
+
+    // res.sendFile(path.resolve(`${extractPath}/index.html`));
+    indexPath = findIndexFile(extractPath);
+    console.log("Index path of the file", indexPath);
+    if (!indexPath) {
+      return res.status(404).send("index.html not found in project");
+    }
+    return res.status(200).sendFile(path.resolve(indexPath));
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send("Error loading project");
   }
 
   // if (!fs.existsSync(indexPath)) {
@@ -268,7 +313,7 @@ app.use("/p", express.static(path.join(__dirname, "projects")));
 app.get("/p/:projectId/", async (req, res) => {
 
   try {
-
+    console.log("Entered public view for project ", req.params.projectId);
     const projectId = req.params.projectId;
     const extractPath = `projects/${projectId}`;
 
@@ -284,33 +329,37 @@ app.get("/p/:projectId/", async (req, res) => {
     if (data.status !== "published") {
       return res.send("Project not published yet");
     }
-
-    // ✅ If already extracted → serve directly
-    let indexPath = findIndexFile(extractPath);
-    if (!indexPath) {
-      return res.send("index.html not found in project");
-    } else {
-      res.sendFile(path.resolve(indexPath));
+    console.log("Checking if folder exists already");
+    if (fs.existsSync("projects") && fs.existsSync(extractPath)) {
+      console.log(fs.existsSync("projects"), fs.existsSync(extractPath));
+      console.log("Checking if index.html is present");
+      // ✅ If already extracted → serve directly
+      let indexPath = findIndexFile(extractPath);
+      console.log("found index path:", indexPath);
+      if (indexPath) {
+        return res.status(200).sendFile(path.resolve(indexPath));
+      }
     }
     // if (fs.existsSync(`${extractPath}/index.html`)) {
     //   return res.sendFile(path.resolve(`${extractPath}/index.html`));
     // }
 
     // 🔥 If not extracted → download & extract
+    console.log("Folder not found");
     const zipUrl = data.zipUrl;
     const zipPath = `temp/${projectId}.zip`;
 
-    const response = await axios({
-      url: zipUrl,
-      method: "GET",
-      responseType: "stream"
-    });
+    // const response = await axios({
+    //   url: zipUrl,
+    //   method: "GET",
+    //   responseType: "stream"
+    // });
 
-    await new Promise((resolve) => {
-      const writer = fs.createWriteStream(zipPath);
-      response.data.pipe(writer);
-      writer.on("finish", resolve);
-    });
+    // await new Promise((resolve) => {
+    //   const writer = fs.createWriteStream(zipPath);
+    //   response.data.pipe(writer);
+    //   writer.on("finish", resolve);
+    // });
 
     // ✅ Ensure folders exist
     if (!fs.existsSync("projects")) {
@@ -323,20 +372,23 @@ app.get("/p/:projectId/", async (req, res) => {
 
     // await fs.ensureDir(extractPath);
 
-    await fs.createReadStream(zipPath)
-      .pipe(unzipper.Extract({ path: extractPath }))
-      .promise();
+    // await fs.createReadStream(zipPath)
+    //   .pipe(unzipper.Extract({ path: extractPath }))
+    //   .promise();
+
+    await extractZipFile(zipUrl, projectId, extractPath);
 
     // res.sendFile(path.resolve(`${extractPath}/index.html`));
     indexPath = findIndexFile(extractPath);
+    console.log("Index path of the file", indexPath);
     if (!indexPath) {
-      return res.send("index.html not found in project");
+      return res.status(404).send("index.html not found in project");
     }
-    res.sendFile(path.resolve(indexPath));
+    return res.status(200).sendFile(path.resolve(indexPath));
 
   } catch (err) {
     console.error(err);
-    res.status(500).send("Error loading project");
+    return res.status(500).send("Error loading project");
   }
 
 });
